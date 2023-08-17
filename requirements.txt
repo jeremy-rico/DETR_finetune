@@ -1,0 +1,5 @@
+pycocotools
+requests
+urllib
+numpy
+torch
