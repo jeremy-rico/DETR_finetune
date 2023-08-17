@@ -1,4 +1,6 @@
 import os
+from pycocotools.coco import COCO
+import requests
 import torch
 import urllib.request
 import zipfile
@@ -30,6 +32,37 @@ else:
     #unzip file
     with zipfile.ZipFile(f"{ann_path}.zip", 'r') as zip_ref:
         zip_ref.extractall(f"{ann_path}")
+
+def get_images(images, save_dir)->None:
+    # Save the images into a local folder
+    for im in images:
+        img_data = requests.get(im['coco_url']).content
+        with open(save_dir + im['file_name'], 'wb') as handler:
+            handler.write(img_data)
+    
+# instantiate COCO specifying the annotations json path
+# since we only need a few images for fine tuning, we can just use the val
+# annotations file
+split_type = 'val2017'
+coco = COCO(os.path.join(ann_path, f"annotations/instances_{split_type}.json"))
+
+# Get id values for specified classes
+CLASSES = ['cat', 'banana']
+cat_catIds = coco.getCatIds(catNms=CLASSES[0])
+banana_catIds = coco.getCatIds(catNms=CLASSES[1])
+
+# Get img ids and load into memory
+num_samples = 100
+cat_imgIds = coco.getImgIds(catIds=cat_catIds)
+cat_images = coco.loadImgs(cat_imgIds)[:num_samples]
+banana_imgIds = coco.getImgIds(catIds=banana_catIds)
+banana_images = coco.loadImgs(banana_imgIds)[:num_samples]
+
+print(f"Num cat images: {len(cat_images)}")
+print(f"Num banana images: {len(banana_images)}")
+
+get_images(cat_images, data_dir)
+get_images(banana_image, data_dir)
 
 #download pretrained weights
 os.makedirs('model', exist_ok=True)
