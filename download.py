@@ -1,11 +1,13 @@
-"""
-This file downloads a small portion of  the 'cat' and 'banana' classes
-from the COCO dataset for fine tuning of the DETE model
-"""
 import os
 import torch
 import urllib.request
 import zipfile
+
+"""
+This file downloads the 2017 COCO train/val annotaions file and
+a few images from the classes 'cat' and 'banana'. It also downloads
+the DETR model.
+"""
 
 #create data directory
 os.makedirs('data', exist_ok=True)
@@ -44,18 +46,5 @@ del checkpoint["model"]["class_embed.bias"]
 
 # Save
 torch.save(checkpoint,
-           'detr-r50_no-class-head.pth')
-
-
-# instantiate COCO specifying the annotations json path
-#coco_train = COCO(f"{ann_path}/annotations/instances_train2017.json")
-coco_val = COCO(f"{ann_path}/annotations/instances_val2017.json")
-
-# Specify a list of category names of interest
-catIds = coco_val.getCatIds(catNms=['cat', 'banana'])
-print(catIds)
-
-# Get the corresponding image ids and images using loadImgs
-#imgIds = coco.getImgIds(catIds=catIds)
-#images = coco.loadImgs(imgIds)
+           'model/detr-r50_no-class-head.pth')
 
