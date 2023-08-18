@@ -1,0 +1,6 @@
+pycocotools
+requests
+numpy
+torch
+tqdm
+torchvision>=0.6.0

@@ -144,7 +144,7 @@ if __name__ == "__main__":
     # instantiate COCO specifying the annotations json path
     coco = COCO(os.path.join(coco_path, f"annotations/instances_{ann_type}.json"))
     cats = coco.loadCats(coco.getCatIds(catNms=CLASSES))
-
+    
     # create dict of custom COCO format annotations for train, val, and test
     custom_anns = [{
         "info": coco.dataset["info"],
@@ -157,7 +157,10 @@ if __name__ == "__main__":
     # convert split percentages to list indicies 
     split_i = split2index(split)
 
-    # gather images and annotations from annotation json for specified classes and number of samples
+    # gather images and annotations from annotation json for specified classes and
+    # number of samples
+
+    print(coco.dataset["annotations"][0])
     for cat in cats:
         # get images
         imgIds = coco.getImgIds(catIds=cat["id"])[:100]
@@ -168,7 +171,7 @@ if __name__ == "__main__":
         custom_anns[2]["images"].extend( images[split_i[1]:] )
 
         # get cooresponding annotations
-        annotations = [coco.loadAnns(coco.getAnnIds(imgIds=im["id"])) for im in images]
+        annotations = [coco.loadAnns(coco.getAnnIds(imgIds=im["id"]))[0] for im in images]
         custom_anns[0]["annotations"].extend( annotations[:split_i[0]] )
         custom_anns[1]["annotations"].extend( annotations[split_i[0]:split_i[1]] )
         custom_anns[2]["annotations"].extend( annotations[split_i[1]:] )
@@ -191,7 +194,6 @@ if __name__ == "__main__":
         json.dump(custom_anns[1], outfile)
     with open(os.path.join(custom_path, 'annotations/custom_test.json'), 'w') as outfile:
         json.dump(custom_anns[2], outfile)
-
 
     # download pretrained weights
     print("Downloading model...")
