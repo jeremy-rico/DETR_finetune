@@ -1,5 +1,6 @@
 pycocotools
 requests
-urllib
 numpy
 torch
+tqdm
+torchvision>=0.6.0

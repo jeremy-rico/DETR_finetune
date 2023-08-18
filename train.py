@@ -2,6 +2,18 @@ import os
 from pycocotools.coco import COCO
 import numpy as np
 
+!git clone https://github.com/facebookresearch/detr.git
+
+!python main.py \
+  --dataset_file "custom" \
+  --coco_path "/data/custom/" \
+  --output_dir "outputs" \
+  --resume "model/detr-r50_no-class-head.pth" \
+  --num_classes $2 \
+  --epochs 10
+     
+
+"""
 data_dir = './data'
 ann_type = 'val2017'
 ann_file = os.path.join(
@@ -19,5 +31,4 @@ imgIds = coco.getImgIds(catIds=catIds );
 
 img_id = imgIds[np.random.randint(0,len(imgIds))]
 
-
-
+"""
