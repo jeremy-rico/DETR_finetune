@@ -178,24 +178,23 @@ if __name__ == "__main__":
         # get images
         imgIds = coco.getImgIds(catIds=cat["id"])[:100]
         images = coco.loadImgs(imgIds)
-        # get annotations
-        annotations = [coco.loadAnns(coco.getAnnIds(imgIds=im["id"]))[0] for im in images]
 
-        # set category id starting at 0
-        for j in range(len(annotations)):
-            annotations[j]["category_id"] = i
+        # put images in cooresponding dict
+        custom_anns["train"]["images"].extend( images[:split_i[0]] )
+        custom_anns["val"]["images"].extend( images[split_i[0]:split_i[1]] )
+        custom_anns["test"]["images"].extend( images[split_i[1]:] )
+
+        # get all annotations for each image for our categories
+        for keyword in ['train', 'test', 'val']:
+            for im in custom_anns[keyword]["images"]:
+                anns = coco.loadAnns(coco.getAnnIds(imgIds=im["id"], catIds=cat["id"]))
+                for ann in anns:
+                    #change cat id
+                    ann["category_id"] = i
+                    custom_anns[keyword]["annotations"].append(ann)
+
         for k in custom_anns.keys():
             custom_anns[k]["categories"][i]["id"] = i
-
-        # split and copy annotations
-        custom_anns["train"]["images"].extend( images[:split_i[0]] )
-        custom_anns["train"]["annotations"].extend( annotations[:split_i[0]] )
-            
-        custom_anns["val"]["images"].extend( images[split_i[0]:split_i[1]] )
-        custom_anns["val"]["annotations"].extend( annotations[split_i[0]:split_i[1]] )
-            
-        custom_anns["test"]["images"].extend( images[split_i[1]:] )
-        custom_anns["test"]["annotations"].extend( annotations[split_i[1]:] )
 
     print("Preparing custom dataset...")
 
@@ -210,6 +209,9 @@ if __name__ == "__main__":
         with open(os.path.join(custom_path, f"annotations/custom_{keyword}.json"), 'w') as outfile:
             json.dump(custom_anns[keyword], outfile)
 
+    test_ann_file = os.path.join(custom_path, f"annotations/custom_val.json")
+    coco = COCO(test_ann_file)
+    
     # download pretrained weights
     os.makedirs('model', exist_ok=True)
     model_url='https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth'
