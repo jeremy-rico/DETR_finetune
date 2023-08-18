@@ -25,11 +25,12 @@ def get_archive(url:str, save_path:str)->None:
     """
     if os.path.isfile(f"{save_path}.zip"):
         print(f"Annotations found at {save_path}.zip")
-    else:
-        print(f"Downloading annotations to {save_path}.zip...")
-        archive = requests.get(ann_url, f"{save_path}.zip").content
-        with open(f"{save_path}.zip", 'wb') as handler:
-            handler.write(archive)
+        return
+    
+    print(f"Downloading annotations to {save_path}.zip...")
+    archive = requests.get(ann_url, f"{save_path}.zip").content
+    with open(f"{save_path}.zip", 'wb') as handler:
+        handler.write(archive)
 
 def extract_json(archive_path:str, split_type:str)->None:
     """
@@ -47,10 +48,11 @@ def extract_json(archive_path:str, split_type:str)->None:
     
     if os.path.isfile(ann_path):
         print(f"Extracted annotations found at {ann_path}")
-    else:
-        print(f"Extracting annotations to {ann_path}")
-        with zipfile.ZipFile(f"{archive_path}.zip", 'r') as zip_ref:
-            zip_ref.extract(ann_file, f"{archive_path}")
+        return
+
+    print(f"Extracting annotations to {ann_path}")
+    with zipfile.ZipFile(f"{archive_path}.zip", 'r') as zip_ref:
+        zip_ref.extract(ann_file, f"{archive_path}")
 
 def get_images(imgs:list, coco_dir:str, split:str)->None:
     """
@@ -75,7 +77,7 @@ def get_images(imgs:list, coco_dir:str, split:str)->None:
             with open(img_name, 'wb') as handler:
                 handler.write(img_data)
 
-def get_model(url:str)->None:
+def get_model(url:str, save_dir:str)->None:
     """
     Downloads model, removes class weights and saves locally
 
@@ -85,7 +87,12 @@ def get_model(url:str)->None:
     Returns:
         None
     """
+    model_path = os.path.join(save_dir, "detr-r50_no-class-head.pth")
+    if os.path.isfile(model_path):
+        print(f"Cached model found at {model_path}")
+        return
 
+    print("Downloading model...")
     # get pretrained weights
     checkpoint = torch.hub.load_state_dict_from_url(
         url=url,
@@ -98,9 +105,9 @@ def get_model(url:str)->None:
 
     # save
     torch.save(checkpoint,
-               'model/detr-r50_no-class-head.pth')
+               model_path)
 
-def split2index(split):
+def split2index(split:list, num_samples:int)->list:
     """
     Converts a split of percentages to list indexes
 
@@ -110,12 +117,15 @@ def split2index(split):
     Returns:
         split_i: list, list of split end index
     """
+    if sum(split) > 1.0:
+        raise ValueError("Please use valid split values")
+            
     split_i = [int(i*num_samples) for i in split]
     split_i[1] = split_i[1] + split_i[0]
     split_i[2] = split_i[2] + split_i[1]
     return split_i
 
-def clean_up():
+def clean_up()->None:
     """
     Deletes files and directories no longer needed
     """
@@ -124,12 +134,14 @@ def clean_up():
     
 if __name__ == "__main__":
 
+    # model/trainins variables
     CLASSES = ['cat', 'banana']
+    num_samples = 100 # num of total samples to use per class
+    split = (0.7, 0.15, 0.15) # train, val, test split
+
+    # data path variables
     coco_path = 'data/anns_trainval2017'
     custom_path = 'data/custom' #link to this path for training
-    ann_type = 'val2017' # just using val since we only need a small amount of data
-    num_samples = 100 
-    split = (0.7, 0.15, 0.15)
 
     #make data directory
     os.makedirs(custom_path, exist_ok=True)
@@ -137,66 +149,70 @@ if __name__ == "__main__":
     # download coco2017 annotaions archive
     ann_url = 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
     get_archive(ann_url, coco_path)
-    
-    # extract zip
+
+    #extract member from zip 
+    ann_type = 'val2017' # just using val since we only need a small amount of data
     extract_json(coco_path, ann_type)
 
     # instantiate COCO specifying the annotations json path
     coco = COCO(os.path.join(coco_path, f"annotations/instances_{ann_type}.json"))
+    
+    # get category ids for our classes
     cats = coco.loadCats(coco.getCatIds(catNms=CLASSES))
     
     # create dict of custom COCO format annotations for train, val, and test
-    custom_anns = [{
+    custom_anns = {keyword: {
         "info": coco.dataset["info"],
         "licenses": coco.dataset["licenses"],
         "categories": cats,
         "images": [],
         "annotations": []
-    } for _ in range(3)]
+    } for keyword in ['train', 'test', 'val'] }
 
     # convert split percentages to list indicies 
-    split_i = split2index(split)
+    split_i = split2index(split, num_samples)
 
     # gather images and annotations from annotation json for specified classes and
     # number of samples
-    for cat in cats:
+    for i, cat in enumerate(cats):
         # get images
         imgIds = coco.getImgIds(catIds=cat["id"])[:100]
         images = coco.loadImgs(imgIds)
-        # save to cooresponding dict
-        custom_anns[0]["images"].extend( images[:split_i[0]] ) #train
-        custom_anns[1]["images"].extend( images[split_i[0]:split_i[1]] ) #val
-        custom_anns[2]["images"].extend( images[split_i[1]:] ) #test
-
-        # get cooresponding annotations
+        # get annotations
         annotations = [coco.loadAnns(coco.getAnnIds(imgIds=im["id"]))[0] for im in images]
-        custom_anns[0]["annotations"].extend( annotations[:split_i[0]] ) #train
-        custom_anns[1]["annotations"].extend( annotations[split_i[0]:split_i[1]] ) #val
-        custom_anns[2]["annotations"].extend( annotations[split_i[1]:] ) #test
 
-    print(f"{len(custom_anns[0]['annotations'])} training samples")
-    print(f"{len(custom_anns[1]['annotations'])} validation samples")
-    print(f"{len(custom_anns[2]['annotations'])} test samples")
+        # set category id starting at 0
+        for j in range(len(annotations)):
+            annotations[j]["category_id"] = i
+        for k in custom_anns.keys():
+            custom_anns[k]["categories"][i]["id"] = i
 
-    # download images
-    get_images(custom_anns[0]["images"], custom_path, 'train2017')
-    get_images(custom_anns[1]["images"], custom_path, 'val2017')
-    get_images(custom_anns[2]["images"], custom_path, 'test2017')
+        # split and copy annotations
+        custom_anns["train"]["images"].extend( images[:split_i[0]] )
+        custom_anns["train"]["annotations"].extend( annotations[:split_i[0]] )
+            
+        custom_anns["val"]["images"].extend( images[split_i[0]:split_i[1]] )
+        custom_anns["val"]["annotations"].extend( annotations[split_i[0]:split_i[1]] )
+            
+        custom_anns["test"]["images"].extend( images[split_i[1]:] )
+        custom_anns["test"]["annotations"].extend( annotations[split_i[1]:] )
 
-    # write annotations to file
-    print("Writing annotations...")
+    print("Preparing custom dataset...")
+
+    # make annotations directory
     os.makedirs(os.path.join(custom_path, 'annotations'), exist_ok=True)
-    with open(os.path.join(custom_path, 'annotations/instances_train2017.json'), 'w') as outfile:
-        json.dump(custom_anns[0], outfile)
-    with open(os.path.join(custom_path, 'annotations/instances_val2017.json'), 'w') as outfile:
-        json.dump(custom_anns[1], outfile)
-    with open(os.path.join(custom_path, 'annotations/instances_test2017.json'), 'w') as outfile:
-        json.dump(custom_anns[2], outfile)
+
+    for keyword in ['train', 'val', 'test']:
+        # download images
+        get_images(custom_anns[keyword]["images"], custom_path, f"{keyword}2017")
+
+        # write annotations to file
+        with open(os.path.join(custom_path, f"annotations/custom_{keyword}.json"), 'w') as outfile:
+            json.dump(custom_anns[keyword], outfile)
 
     # download pretrained weights
-    print("Downloading model...")
     os.makedirs('model', exist_ok=True)
     model_url='https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth'
-    get_model(model_url)
+    get_model(model_url, 'model')
 
     #clean_up()
