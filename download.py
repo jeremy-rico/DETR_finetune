@@ -159,22 +159,20 @@ if __name__ == "__main__":
 
     # gather images and annotations from annotation json for specified classes and
     # number of samples
-
-    print(coco.dataset["annotations"][0])
     for cat in cats:
         # get images
         imgIds = coco.getImgIds(catIds=cat["id"])[:100]
         images = coco.loadImgs(imgIds)
         # save to cooresponding dict
-        custom_anns[0]["images"].extend( images[:split_i[0]] )
-        custom_anns[1]["images"].extend( images[split_i[0]:split_i[1]] )
-        custom_anns[2]["images"].extend( images[split_i[1]:] )
+        custom_anns[0]["images"].extend( images[:split_i[0]] ) #train
+        custom_anns[1]["images"].extend( images[split_i[0]:split_i[1]] ) #val
+        custom_anns[2]["images"].extend( images[split_i[1]:] ) #test
 
         # get cooresponding annotations
         annotations = [coco.loadAnns(coco.getAnnIds(imgIds=im["id"]))[0] for im in images]
-        custom_anns[0]["annotations"].extend( annotations[:split_i[0]] )
-        custom_anns[1]["annotations"].extend( annotations[split_i[0]:split_i[1]] )
-        custom_anns[2]["annotations"].extend( annotations[split_i[1]:] )
+        custom_anns[0]["annotations"].extend( annotations[:split_i[0]] ) #train
+        custom_anns[1]["annotations"].extend( annotations[split_i[0]:split_i[1]] ) #val
+        custom_anns[2]["annotations"].extend( annotations[split_i[1]:] ) #test
 
     print(f"{len(custom_anns[0]['annotations'])} training samples")
     print(f"{len(custom_anns[1]['annotations'])} validation samples")
@@ -188,11 +186,11 @@ if __name__ == "__main__":
     # write annotations to file
     print("Writing annotations...")
     os.makedirs(os.path.join(custom_path, 'annotations'), exist_ok=True)
-    with open(os.path.join(custom_path, 'annotations/custom_train.json'), 'w') as outfile:
+    with open(os.path.join(custom_path, 'annotations/instances_train2017.json'), 'w') as outfile:
         json.dump(custom_anns[0], outfile)
-    with open(os.path.join(custom_path, 'annotations/custom_val.json'), 'w') as outfile:
+    with open(os.path.join(custom_path, 'annotations/instances_val2017.json'), 'w') as outfile:
         json.dump(custom_anns[1], outfile)
-    with open(os.path.join(custom_path, 'annotations/custom_test.json'), 'w') as outfile:
+    with open(os.path.join(custom_path, 'annotations/instances_test2017.json'), 'w') as outfile:
         json.dump(custom_anns[2], outfile)
 
     # download pretrained weights
