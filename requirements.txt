@@ -1,7 +1,7 @@
-pycocotools
-requests
+argparse
 numpy
+pycocotools
+pathlib
+requests
 torch
 tqdm
-torchvision>=0.6.0
-pathlib
