@@ -1,9 +1,7 @@
-import os
 import json
 from pycocotools.coco import COCO
 import requests
 import torch
-import urllib.request
 import zipfile
 from tqdm import tqdm
 import argparse
