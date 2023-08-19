@@ -16,9 +16,9 @@ the DETR model.
 """
 def get_args_parser():
     parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
-    parser.add_argument('--classes', nargs=2, default=['cat', 'banana'], type=str)
+    parser.add_argument('--classes', nargs='+', default=('cat', 'banana'), type=str)
     parser.add_argument('--num_samples', default=100, type=int)
-    parser.add_argument('--split', default=(0.7,0.15,0.15), type=tuple)
+    parser.add_argument('--split', nargs='+', default=(0.7,0.15,0.15), type=float)
     parser.add_argument('--coco_type', default='trainval2017', type=str)
     parser.add_argument('--out_dir', default='data/', type=str)
 
