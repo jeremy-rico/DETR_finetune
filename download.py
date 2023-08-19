@@ -6,71 +6,88 @@ import torch
 import urllib.request
 import zipfile
 from tqdm import tqdm
+import argparse
+from pathlib import Path
 
 """
 This file downloads the 2017 COCO train/val annotaions file and
 a few images from the classes 'cat' and 'banana'. It also downloads
 the DETR model.
 """
-def get_archive(url:str, save_path:str)->None:
+def get_args_parser():
+    parser = argparse.ArgumentParser('Set transformer detector', add_help=False)
+    parser.add_argument('--classes', nargs=2, default=['cat', 'banana'], type=str)
+    parser.add_argument('--num_samples', default=100, type=int)
+    parser.add_argument('--split', default=(0.7,0.15,0.15), type=tuple)
+    parser.add_argument('--coco_type', default='trainval2017', type=str)
+    parser.add_argument('--out_dir', default='data/', type=str)
+
+    return parser
+
+def get_archive(url:str, out_dir:Path, coco_type:str)->Path:
     """
     Downloads the archive pointed to by the url
 
     Arguments:
         url: str, url to send request
-        save_path: str, directory path to save zip file
+        out_dir: pathlib.Path, directory path to save zip file
+        coco_type: str, coco annotation type
 
     Returns:
-        None
+        archive_path: Path, path to downloaded zip
     """
-    if os.path.isfile(f"{save_path}.zip"):
-        print(f"Annotations found at {save_path}.zip")
-        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = out_dir / f"annotations_{coco_type}.zip"
+    if archive_path.exists():
+        print(f"Annotations found at {archive_path}")
+        return archive_path
     
-    print(f"Downloading annotations to {save_path}.zip...")
-    archive = requests.get(ann_url, f"{save_path}.zip").content
-    with open(f"{save_path}.zip", 'wb') as handler:
+    print(f"Downloading annotations to {archive_path}...")
+    archive = requests.get(url, str(archive_path)).content
+    with open(archive_path, 'wb') as handler:
         handler.write(archive)
+        
+    return archive_path
 
-def extract_json(archive_path:str, split_type:str)->None:
+def extract_json(out_dir:Path, archive_path:Path, split_type:str)->None:
     """
     Extracts one split member from the zip file 
 
     Arguments:
-        archive_path: str, path to coco zip file
+        out_dir: pathlib.Path path to save extracted annotations
+        archive_path: pathlib.Path path to coco zip file
         split_type: str, type of annotation file (train2017, val2017)
 
     Returns:
         None
     """
-    ann_file = f"annotations/instances_{split_type}.json"
-    ann_path = os.path.join(archive_path, ann_file)
-    
-    if os.path.isfile(ann_path):
+    ann_path = out_dir / archive_path.stem
+    ann_file = f'annotations/instances_{split_type}.json'
+    if ann_path.exists():
         print(f"Extracted annotations found at {ann_path}")
         return
 
     print(f"Extracting annotations to {ann_path}")
-    with zipfile.ZipFile(f"{archive_path}.zip", 'r') as zip_ref:
-        zip_ref.extract(ann_file, f"{archive_path}")
+    with zipfile.ZipFile(str(archive_path), 'r') as zip_ref:
+        zip_ref.extract(ann_file, ann_path)
 
-def get_images(imgs:list, coco_dir:str, split:str)->None:
+def get_images(imgs:list, coco_dir:Path, split:str)->None:
     """
     Downloads images to local folder
 
     Arguments:
         imgs: list, list of images in coco format
-        coco_dir: str, path to location where coco annotations are stored
+        coco_dir: pathlib.Path, path to location where coco annotations are stored
         split_type: str, type of annotation file (train2017, val2017)
 
     Returns:
         None
     """
-    img_dir = os.path.join(coco_dir, split)
-    os.makedirs(img_dir, exist_ok=True)
+    img_dir = coco_dir / split
+    img_dir.mkdir(parents=True, exist_ok=True)
     for im in tqdm(imgs, desc=f"Downloading {split} images"):
-        img_name = os.path.join(img_dir, im['file_name'])
-        if not os.path.isfile(img_name):
+        img_name = img_dir /  im['file_name']
+        if not img_name.exists():
             # request image 
             img_data = requests.get(im['coco_url']).content
             #write image
@@ -87,8 +104,8 @@ def get_model(url:str, save_dir:str)->None:
     Returns:
         None
     """
-    model_path = os.path.join(save_dir, "detr-r50_no-class-head.pth")
-    if os.path.isfile(model_path):
+    model_path = save_dir / "detr-r50_no-class-head.pth"
+    if model_path.exists():
         print(f"Cached model found at {model_path}")
         return
 
@@ -125,40 +142,27 @@ def split2index(split:list, num_samples:int)->list:
     split_i[2] = split_i[2] + split_i[1]
     return split_i
 
-def clean_up()->None:
-    """
-    Deletes files and directories no longer needed
-    """
-    os.delete('data/anns_trainval2017')
-    os.delete('data/anns_trainval2017.zip')
-    
-if __name__ == "__main__":
-
-    # model/trainins variables
-    CLASSES = ['cat', 'banana']
-    num_samples = 100 # num of total samples to use per class
-    split = (0.7, 0.15, 0.15) # train, val, test split
-
+def main(args):
     # data path variables
-    coco_path = 'data/anns_trainval2017'
-    custom_path = 'data/custom' #link to this path for training
+    #coco_path = Path(args.out_dir) / f'annotations_{args.coco_type}'
+    coco_path = Path(args.out_dir)
+    custom_path = Path(args.out_dir) / 'custom' #link to this path for training
 
-    #make data directory
-    os.makedirs(custom_path, exist_ok=True)
-    
     # download coco2017 annotaions archive
-    ann_url = 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
-    get_archive(ann_url, coco_path)
+    ann_url = f'http://images.cocodataset.org/annotations/annotations_{args.coco_type}.zip'
+    archive_path = get_archive(ann_url, coco_path, args.coco_type)
 
-    #extract member from zip 
-    ann_type = 'val2017' # just using val since we only need a small amount of data
-    extract_json(coco_path, ann_type)
+    # extract member from zip
+    # just using val since we only need a small amount of data
+    ann_type = 'val2017' if args.num_samples < 150 else 'train2017' 
+    extract_json(coco_path, archive_path, ann_type)
 
     # instantiate COCO specifying the annotations json path
-    coco = COCO(os.path.join(coco_path, f"annotations/instances_{ann_type}.json"))
+    ann_file = coco_path / f"annotations_{args.coco_type}/annotations/instances_{ann_type}.json"
+    coco = COCO(ann_file)
     
     # get category ids for our classes
-    cats = coco.loadCats(coco.getCatIds(catNms=CLASSES))
+    cats = coco.loadCats(coco.getCatIds(catNms=args.classes))
     
     # create dict of custom COCO format annotations for train, val, and test
     custom_anns = {keyword: {
@@ -170,7 +174,7 @@ if __name__ == "__main__":
     } for keyword in ['train', 'test', 'val'] }
 
     # convert split percentages to list indicies 
-    split_i = split2index(split, num_samples)
+    split_i = split2index(args.split, args.num_samples)
 
     # gather images and annotations from annotation json for specified classes and
     # number of samples
@@ -199,22 +203,27 @@ if __name__ == "__main__":
     print("Preparing custom dataset...")
 
     # make annotations directory
-    os.makedirs(os.path.join(custom_path, 'annotations'), exist_ok=True)
+    custom_ann_path = custom_path / 'annotations'
+    custom_ann_path.mkdir(parents=True, exist_ok=True)
 
     for keyword in ['train', 'val', 'test']:
         # download images
         get_images(custom_anns[keyword]["images"], custom_path, f"{keyword}2017")
 
         # write annotations to file
-        with open(os.path.join(custom_path, f"annotations/custom_{keyword}.json"), 'w') as outfile:
+        with open(custom_ann_path / f"custom_{keyword}.json", 'w') as outfile:
             json.dump(custom_anns[keyword], outfile)
 
-    test_ann_file = os.path.join(custom_path, f"annotations/custom_val.json")
-    coco = COCO(test_ann_file)
-    
     # download pretrained weights
-    os.makedirs('model', exist_ok=True)
+    model_path = Path('model')
+    model_path.mkdir(parents='True', exist_ok=True)
     model_url='https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth'
-    get_model(model_url, 'model')
+    get_model(model_url, model_path)
 
-    #clean_up()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser('COCO and DETR download script',
+                                     parents=[get_args_parser()])
+    args = parser.parse_args()
+    if args.out_dir:
+        Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    main(args)
