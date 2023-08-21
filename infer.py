@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 from PIL import Image
 import random
 import matplotlib.pyplot as plt
@@ -8,6 +9,12 @@ import torch.nn.functional as F
 from pycocotools.coco import COCO
 from scipy.optimize import linear_sum_assignment
 from torchvision.ops.boxes import box_area
+
+transform = T.Compose([
+    T.Resize(800),
+    T.ToTensor(),
+    T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(1)
@@ -132,8 +139,10 @@ class HungarianMatcher(torch.nn.Module):
 
         sizes = [len(v["boxes"]) for v in targets]
         indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
-        i_out = [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
-        return {'indices': i_out, 'cost': C}
+        i_out = [(torch.as_tensor(i, dtype=torch.int64),
+                  torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
+        #print(f"GIOU???: {i_out[0][-1]}")
+        return {'indices': i_out, 'giou': cost_giou.view(bs, num_queries, -1).cpu()}
 
 
     def build_matcher(args):
@@ -153,96 +162,119 @@ def format_labels(anns):
     for k in target.keys():
         target[k] = torch.tensor(target[k])
 
-    #going over one image at a time so batch size will always be one
-    # this is kind of hacky and could be optimized
-    return [target]
-    
-        
+    return target
+            
 # runs inference on all test images in coco file
 def run_infer(coco, model, dataDir):
+    outputs = {'pred_logits': torch.Tensor([]),
+               'pred_boxes': torch.Tensor([])}
+    targets = []
+    
     imgIds = coco.getImgIds() #get all test image ids
-    matched_pairs = [[], []]
-    for imgId in imgIds:
+    imgIds = imgIds[:5]
+    for imgId in tqdm(imgIds, desc='Running inference...'): 
         # get image
         test_img = coco.loadImgs(imgId)[0]
         img_name = dataDir / 'test2017' / test_img['file_name']
         im = Image.open(img_name)
         img = transform(im).unsqueeze(0)
-
-        # infer with model
-        outputs = model(img)
-
+        
         # format labels
         annIds = coco.getAnnIds(imgIds=imgId)
         anns = coco.loadAnns(annIds)
-        targets = format_labels(anns)
 
-        #perform matching
-        matcher = HungarianMatcher()
-        matcher_dict = matcher.forward(outputs, targets)
-        pairs = matcher_dict['indices']
-        loss = matcher_dict['cost'] #loss for cooresponding pair
-        for i, pair in enumerate(pairs):
-            print(outputs['pred_logits'][i][pair[0]])
-            print(targets[i]['labels'][pair[1]])
-            print(outputs['pred_boxes'][i][pair[1]])
-            print(targets[i]['labels'][pair[1]])
-            print(loss[i][pair[0]])
+        # infer with model
+        img_outputs = model(img)
+        for k in outputs.keys():
+            outputs[k] = torch.cat( (outputs[k], img_outputs[k]) )
 
-        exit()
+        targets.append(format_labels(anns))
+        
+    return outputs, targets
 
+def get_f1(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7):
+    #load cat ids
+    cats = coco.loadCats(coco.getCatIds())
+    
+    # class based conf matrix holder, index is the category id
+    cls_conf_mat = [{'tp':0, 'fp':0, 'fn':0} for cat in cats] #tn not applicable
+    
+    #perform matching
+    # I modified this class to also return giou for every pair
+    matcher = HungarianMatcher()
+    matcher_dict = matcher.forward(outputs, targets)
+    pairs = matcher_dict['indices']
+    giou = matcher_dict['giou'] #giou for pair
 
-transform = T.Compose([
-    T.Resize(800),
-    T.ToTensor(),
-    T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
+    # get giou for every pair for conf matrix
+    for i, pair in enumerate(pairs):
+        # get all preds of high conf for fp
+        probas_all = outputs['pred_logits'].softmax(-1)[i, :, :-1]
+        keep = probas_all.max(-1).values > conf_thresh
+        probas_all_set = set(probas_all[keep])
 
-num_classes = 2
-model = torch.hub.load('facebookresearch/detr',
-                       'detr_resnet50',
-                       pretrained=False,
-                       num_classes=num_classes)
+        for j in range(len(pair[0])): #num matched per image
+            index_i = pair[0][j]
+            index_j = pair[1][j]
 
-out_dir = Path('model')
-checkpoint = torch.load(out_dir / 'checkpoint.pth',
-                        map_location='cpu')
+            probas_matched = outputs['pred_logits'][i][index_i].softmax(-1)
+            if probas_matched[:len(cats)] in probas_all_set:
+                probas_all_set.remove(probas_matched[:len(cats)])
+            pred_id = torch.argmax(probas_matched)
+            true_id = targets[i]['labels'][index_j]
+            pair_giou = giou[i][index_i][j]
 
-model.load_state_dict(checkpoint['model'],
-                      strict=False)
-model.eval()
-dataDir = Path('data/custom')
-test_annFile = dataDir / f'annotations/custom_test.json'
-test_coco = COCO(test_annFile)
+            # correct class and box = true positive
+            print(f"Pred: {pred_id}, True: {true_id}, giou: {pair_giou}")
+            if pred_id == len(cats): #no_object prediction
+                cls_conf_mat[true_id]['fn'] += 1
+            elif pair_giou >= giou_thresh:
+                if pred_id == true_id:
+                    cls_conf_mat[pred_id]['tp'] += 1
+                    print('TP!')
+                else:
+                    cls_conf_mat[pred_id]['fp'] += 1 
+                    cls_conf_mat[true_id]['fn'] += 1
+                    print('Misclass!')
+            else:
+                cls_conf_mat[true_id]['fn'] += 1
+                print('FN!')
+                
+        for probs in probas_all_set:
+            cls_conf_mat[probs.argmax()]['fp'] += 1
+            print('FP!')
 
-run_infer(test_coco, model, dataDir)
+    for i, cls in enumerate(cls_conf_mat):
+        prec = cls['tp'] / (cls['tp']+cls['fp'])
+        recall = cls['tp'] / (cls['tp']+cls['fn'])
+        cls_conf_mat[i] = 2*prec*recall / (prec*recall) if prec+recall > 0 else 0
 
-def f1_score(coco, model, dataDir):
-  f1_dict = {}
-  cats = coco.loadCats(coco.getCatIds())
-  for cat in cats:
-    outputs = {
-        'pred_logits': [],
-        'pred_bboxes': [],
-        'labels': [],
-        'bboxes': []
-    }
-    #f1_dict[cat['name']] = {'tp':0, 'fp':0, 'tn':0, 'fn':0}
-    imgIds = coco.getImgIds(catIds=cat["id"])
-    for imgId in imgIds:
-      test_img = coco.loadImgs(imgId)[0]
-      img_name = os.path.join(dataDir, f'test2017', test_img['file_name'])
-      im = Image.open(img_name)
-      img = transform(im).unsqueeze(0)
+    f1_holder = {cat['name']: cls[cat['id']] for cat in cats}
+    print(f1_holder)
+        
 
-      # propagate through the model
-      outputs = model(img)
-      conf_thresh = 0.70
-      probas, bboxes_pred = filter_bboxes_from_outputs(outputs,
-                                                  threshold=conf_thresh)
+def main():
+    num_classes = 2
+    model = torch.hub.load('facebookresearch/detr',
+                           'detr_resnet50',
+                           pretrained=False,
+                           num_classes=num_classes)
 
-      # get labeled box coords
-      print(loss)
+    out_dir = Path('model')
+    checkpoint = torch.load(out_dir / 'checkpoint.pth',
+                            map_location='cpu')
 
-#f1 = f1_score(test_coco, model, dataDir)
-#model.eval();
+    model.load_state_dict(checkpoint['model'],
+                          strict=False)
+    model.eval()
+
+    dataDir = Path('data/custom')
+    test_annFile = dataDir / f'annotations/custom_test.json'
+    test_coco = COCO(test_annFile)
+
+    outputs, targets = run_infer(test_coco, model, dataDir)
+
+    f1 = get_f1(test_coco, outputs, targets)
+
+if __name__ == "__main__":
+    main()
