@@ -200,7 +200,7 @@ def box_cxcywh_to_mxmywh(coco_img, box):
 """
 
 #import matplotlib.patches as patches ###DEBUG ###
-def get_f1(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
+def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
     """
     Processes output of run_infer to create a per class f1 score
 
