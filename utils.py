@@ -185,6 +185,8 @@ def run_infer(coco, model, dataDir):
 
         # append formated labels
         targets.append(format_labels(test_img, anns))
+
+        del img, img_outputs
         
     return outputs, targets
 
