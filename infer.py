@@ -24,7 +24,7 @@ def main():
 
     outputs, targets = run_infer(test_coco, model, dataDir)
 
-    per_cls_f1 = get_f1(test_coco, outputs, targets)
+    per_cls_f1 = f_beta(test_coco, outputs, targets, beta=1)
 
     for cls, f1 in per_cls_f1.items():
         print(f"Class name: {cls:>6}, f1-score: {f1:.3}")

@@ -1,11 +1,9 @@
 import torch
 from tqdm import tqdm
 from PIL import Image
-#import matplotlib.pyplot as plt
 import torchvision.transforms as T
 from pathlib import Path
 import torch.nn.functional as F
-#from pycocotools.coco import COCO
 from scipy.optimize import linear_sum_assignment
 from torchvision.ops.boxes import box_area
 
@@ -202,7 +200,7 @@ def box_cxcywh_to_mxmywh(coco_img, box):
 """
 
 #import matplotlib.patches as patches ###DEBUG ###
-def get_f1(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7):
+def get_f1(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
     """
     Processes output of run_infer to create a per class f1 score
 
@@ -324,6 +322,6 @@ def get_f1(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7):
     for i, cls in enumerate(cls_conf_mat):
         prec = cls['tp'] / (cls['tp']+cls['fp']) if cls['tp']+cls['fp'] > 0 else 0
         recall = cls['tp'] / (cls['tp']+cls['fn']) if cls['tp']+cls['fn'] > 0 else 0
-        cls_conf_mat[i] = (2*prec*recall) / (prec+recall) if prec+recall > 0 else 0
+        cls_conf_mat[i] = ( (2 * beta**2) * prec * recall ) / ( (beta**2 * prec) + recall ) if prec+recall > 0 else 0
 
     return {cat['name']: cls_conf_mat[cat['id']] for cat in cats}
