@@ -1,7 +1,7 @@
 import torch
 from pathlib import Path
 from pycocotools.coco import COCO
-from utils import run_infer, get_f1
+from utils import run_infer, f_beta
 
 def main():
     num_classes = 2

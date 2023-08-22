@@ -164,6 +164,8 @@ def run_infer(coco, model, dataDir):
 
     # load all image IDs
     imgIds = coco.getImgIds()
+
+    import sys ### DEBUG
     
     for imgId in tqdm(imgIds, desc='Running inference...'): 
         # get image
@@ -185,6 +187,9 @@ def run_infer(coco, model, dataDir):
 
         # append formated labels
         targets.append(format_labels(test_img, anns))
+
+        print(f"Outputs: {sys.getsizeof(outputs)*1.25e-10} GB")
+        print(f"Target: {sys.getsizeof(targets)*1.25e-10} GB")
 
         del img, img_outputs
         
