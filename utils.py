@@ -169,9 +169,9 @@ def run_infer(coco, model, dataDir):
         # get image
         test_img = coco.loadImgs(imgId)[0]
         img_name = dataDir / 'test2017' / test_img['file_name']
-        im = Image.open(img_name)
-        img = transform(im).unsqueeze(0)
-        
+        with Image.open(img_name) as im:
+            img = transform(im).unsqueeze(0)
+
         # format labels
         annIds = coco.getAnnIds(imgIds=imgId)
         anns = coco.loadAnns(annIds)
