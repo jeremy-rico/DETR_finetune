@@ -27,8 +27,8 @@ python3 main.py \
 ```
 
 Once you have your model checkpoint, you can run
-'''shell
+```shell
 python3 infer.py
-'''
+```
 
 To get the per class f1 values
