@@ -137,8 +137,12 @@ def format_labels(coco_img, anns):
         target[k] = torch.tensor(target[k])
 
     return target
-            
+
+def run_model(img, model):
+    return model(img)
+
 # runs inference on all test images in coco file
+@torch.no_grad()
 def run_infer(coco, model, dataDir):
     """
     Runs model inference on ALL images in a coco object
@@ -158,16 +162,20 @@ def run_infer(coco, model, dataDir):
             'boxes': tensor of dim [batch size, 4] containing formatted boxes (see format_labels)
     """
     # instanciate data holders
-    outputs = {'pred_logits': torch.Tensor([]),
-               'pred_boxes': torch.Tensor([])}
+    outputs = {
+        'pred_logits': torch.Tensor(),
+        'pred_boxes': torch.Tensor()
+    }
     targets = []
 
     # load all image IDs
     imgIds = coco.getImgIds()
 
     import sys ### DEBUG
+    import os
     
-    for imgId in tqdm(imgIds, desc='Running inference...'): 
+    for imgId in tqdm(imgIds, desc='Running inference...'):
+        torch.cuda.empty_cache()
         # get image
         test_img = coco.loadImgs(imgId)[0]
         img_name = dataDir / 'test2017' / test_img['file_name']
@@ -179,20 +187,16 @@ def run_infer(coco, model, dataDir):
         anns = coco.loadAnns(annIds)
 
         # infer with model
-        img_outputs = model(img)
+        img_outputs = run_model(img, model)
 
+        out_size = 0
         # concat model outputs to holder
         for k in outputs.keys():
-            outputs[k] = torch.cat( (outputs[k], img_outputs[k]) )
+            outputs[k] = torch.cat( (outputs[k], img_outputs[k]), 0)
 
         # append formated labels
         targets.append(format_labels(test_img, anns))
 
-        print(f"Outputs: {sys.getsizeof(outputs)*1.25e-10} GB")
-        print(f"Target: {sys.getsizeof(targets)*1.25e-10} GB")
-
-        del img, img_outputs
-        
     return outputs, targets
 
 """

@@ -14,8 +14,7 @@ def main():
     checkpoint = torch.load(out_dir / 'checkpoint.pth',
                             map_location='cpu')
 
-    model.load_state_dict(checkpoint['model'],
-                          strict=False)
+    model.load_state_dict(checkpoint['model'], strict=False)
     model.eval()
 
     dataDir = Path('data/custom')
