@@ -1,4 +1,4 @@
-DETR Finetuning
+#DETR Finetuning
 
 This script creates a custom COCO dataset of two classes and fintunes the DETR model on them.
 
