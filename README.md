@@ -1,10 +1,12 @@
 # DETR Finetuning
 
-This script creates a custom COCO dataset of two classes and fintunes the DETR model on them.
+This script creates a custom COCO dataset of two classes and finetunes the DETR model on them.
 
 It also instruments the code to create a per class f1 score for inference images.
 
-To run
+For an example run of all functionality, see finetune.ipynb.
+
+To run:
 
 ```shell
 python3 -m venv DETR
