@@ -115,15 +115,20 @@ def format_labels(coco_img, anns):
     Formats COCO labels to be passed into the Hungarian Matcher
 
     Arguments:
-        coco_img:
-    
+        coco_img: coco image instance
+        anns: coco annotations for the image
+
+    Returns:
+        target: a dictionary of formatted labels where
+            'labels' is a tensor of dim [len(anns), 1]
+            'boxes' is a tensor of dim [len(anns), 4]
     """
     target = {
         'labels': [],
         'boxes': []
     }
     for ann in anns:
-        # convert coco format to cx, cy, w, h as ratio
+        # convert coco format to cx, cy, w, h as image size ratio
         cx = (ann['bbox'][0]+0.5*ann['bbox'][2]) / coco_img['width']
         cy = (ann['bbox'][1]+0.5*ann['bbox'][3]) / coco_img['height']
         w = ann['bbox'][2] / coco_img['width']
@@ -171,11 +176,7 @@ def run_infer(coco, model, dataDir):
     # load all image IDs
     imgIds = coco.getImgIds()
 
-    import sys ### DEBUG
-    import os
-    
     for imgId in tqdm(imgIds, desc='Running inference...'):
-        torch.cuda.empty_cache()
         # get image
         test_img = coco.loadImgs(imgId)[0]
         img_name = dataDir / 'test2017' / test_img['file_name']
@@ -199,19 +200,7 @@ def run_infer(coco, model, dataDir):
 
     return outputs, targets
 
-"""
-def box_cxcywh_to_mxmywh(coco_img, box):
-    cx, cy, w, h = box.unbind(1)
-    img_width, img_height = (coco_img['width'], coco_img['height'])
-    xmin = (cx.item()-0.5*w.item())*img_width
-    ymin = (cy.item()-0.5*h.item())*img_height
-    w = w.item()*img_width
-    h = h.item()*img_height
-    return [xmin, ymin, w, h]
-"""
-
-#import matplotlib.patches as patches ###DEBUG ###
-def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
+def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.8, beta=1):
     """
     Processes output of run_infer to create a per class f1 score
 
@@ -221,42 +210,23 @@ def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
         targets: list of target dicts (see run_infer)
         giou_thresh: giou threshold needed to be considered true positive
         conf_thresh: confidence threshold needed to be considered for false positive
+        beta: beta value for f_beta calculation
 
     Returns:
-       a dict where k, v pairs are {class name: f1-score}
+       a dict where k, v pairs are {class name: f-beta score}
     """
     #load cat ids
     cats = coco.loadCats(coco.getCatIds())
 
-    """
-    ### DEBUG ###
-    imgIds = coco.getImgIds()
-    dataDir = Path('data/custom/')
-    inferDir = dataDir / 'infer'
-    inferDir.mkdir(parents=True, exist_ok=True)
-    """
-    ### END DEBUG ###
-    
     # class based conf matrix holder, index is the category id
     cls_conf_mat = [{'tp':0, 'fp':0, 'fn':0} for cat in cats] #tn not applicable
     
     #perform matching
-    # I modified this class to also return giou for every pair
     matcher = HungarianMatcher()
     pairs = matcher.forward(outputs, targets)
 
     # get giou for every pair for conf matrix
     for i, pair in enumerate(pairs):
-        """
-        ### DEBUG ###
-        test_img = coco.loadImgs(imgIds[i])[0]
-        img_name = dataDir / 'test2017' / test_img['file_name']
-        im = Image.open(img_name)
-
-        fig, ax = plt.subplots()
-        ax.imshow(im)
-        ### END DEBUG ###
-        """
         # get all preds of high conf for fp
         probas_all = outputs['pred_logits'].softmax(-1)[i, :, :-1]
         keep = probas_all.max(-1).values > conf_thresh
@@ -276,42 +246,10 @@ def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
             giou = generalized_box_iou(box_cxcywh_to_xyxy(pred_box),
                                        box_cxcywh_to_xyxy(true_box) )
 
-            """
-            pred = box_cxcywh_to_mxmywh(test_img, pred_box)
-            true = box_cxcywh_to_mxmywh(test_img, true_box)
-            
-            #print(giou)
-            #continue
-
-            pred_rect = patches.Rectangle(
-                (pred[0], pred[1]),
-                pred[2], pred[3],
-                linewidth=1,
-                edgecolor='r',
-                facecolor='none'
-            )
-            true_rect = patches.Rectangle(
-                (true[0], true[1]),
-                true[2], true[3],
-                linewidth = 1,
-                edgecolor = 'g',
-                facecolor='none'
-            )
-             
-            ax.add_patch(pred_rect)
-            ax.add_patch(true_rect)
-
-            plt.text(true[0], true[1], f"True: {true_id}", color='g')
-            plt.text(pred[0], pred[1], f"Pred: {pred_id}", color='r')
-            plt.text(j*200, 0, f"GIOU: {giou.item():.3}")
-
-            ### END DEBUG ###
-            """
             # remove matched boxes from all high conf (left overs will be FP)
             if probas_matched[:len(cats)] in probas_all_set:
                 probas_all_set.remove(probas_matched[:len(cats)])
 
-            # correct class and box = true positive
             if pred_id == len(cats): #no_object prediction
                 cls_conf_mat[true_id]['fn'] += 1
             elif giou >= giou_thresh:
@@ -326,10 +264,7 @@ def f_beta(coco, outputs, targets, giou_thresh=0.5, conf_thresh=0.7, beta=1):
         for probs in probas_all_set:
             cls_conf_mat[probs.argmax()]['fp'] += 1
 
-        #plt.savefig(inferDir/test_img['file_name']) ###DEBUG ###
-        #plt.close()
-
-    #calculate per class f1-score
+    #calculate per class f-beta score
     for i, cls in enumerate(cls_conf_mat):
         prec = cls['tp'] / (cls['tp']+cls['fp']) if cls['tp']+cls['fp'] > 0 else 0
         recall = cls['tp'] / (cls['tp']+cls['fn']) if cls['tp']+cls['fn'] > 0 else 0
