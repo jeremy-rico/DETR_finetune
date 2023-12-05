@@ -1,5 +1,6 @@
 *~
 __pychache__
-/data
-/model
-/detr
+src/data
+src/model
+src/detr
+src/outputs
